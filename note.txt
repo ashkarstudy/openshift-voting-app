@@ -1,0 +1,7 @@
+configure storage
+-------------------------------------------------------------------
+
+oc create sa postgres-sa -n voting-app
+oc adm policy add-scc-to-user anyuid -z postgres-sa -n voting-app
+
+--------------------------------------------------------------------

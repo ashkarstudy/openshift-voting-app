@@ -2,6 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: postgres
+  namespace: voting-app
+  labels:
+    app: postgres
 spec:
   replicas: 1
   selector:
@@ -12,9 +15,12 @@ spec:
       labels:
         app: postgres
     spec:
+      serviceAccountName: postgres-sa   # optional, if using fsGroup
+      securityContext:
+        fsGroup: 26                      # optional, for OpenShift restricted SCC
       containers:
       - name: postgres
-        image: postgres:15
+        image: postgres:15-alpine
         ports:
         - containerPort: 5432
         env:
@@ -33,9 +39,11 @@ spec:
             secretKeyRef:
               name: postgres-secret
               key: POSTGRES_DB
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
         volumeMounts:
         - name: postgres-storage
-          mountPath: /var/lib/postgresql/data
+          mountPath: /var/lib/postgresql/data/pgdata
         resources:
           requests:
             memory: "256Mi"
@@ -45,4 +53,6 @@ spec:
             cpu: "500m"
       volumes:
       - name: postgres-storage
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+
