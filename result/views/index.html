@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html ng-app="catsvsdogs">
+<head>
+  <meta charset="utf-8">
+  <title>Cats vs Dogs -- Result</title>
+  <base href="/index.html">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+  <style>
+    body { background: linear-gradient(45deg, #667eea 0%, #764ba2 100%); }
+    .container { margin-top: 50px; }
+    .result { background-color: #fff; padding: 20px; border-radius: 5px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="row">
+      <div class="col-md-8 col-md-offset-2">
+        <div class="result">
+          <h2>Results</h2>
+          <div id="results"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    
+    socket.on('votes', function(votes) {
+      let html = '<table class="table table-striped">';
+      html += '<thead><tr><th>Option</th><th>Votes</th></tr></thead><tbody>';
+      
+      votes.forEach(vote => {
+        html += `<tr><td>${vote.vote}</td><td>${vote.count}</td></tr>`;
+      });
+      
+      html += '</tbody></table>';
+      document.getElementById('results').innerHTML = html;
+    });
+  </script>
+</body>
+</html>

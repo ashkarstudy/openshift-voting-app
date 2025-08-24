@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{{option_a}} vs {{option_b}}!</title>
+    <base href="/index.html">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="keywords" content="docker-compose, docker, stack">
+    <meta name="author" content="Tutum dev team">
+    <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+    <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.4.0/css/font-awesome.min.css">
+    <style>
+        body { background: linear-gradient(45deg, #667eea 0%, #764ba2 100%); }
+        .container { margin-top: 50px; }
+        .vote { margin-bottom: 15px; background-color: #fff; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 col-md-offset-3">
+                <h3>{{option_a}} vs {{option_b}}!</h3>
+                <form method="POST">
+                    <button id="a" class="btn btn-primary btn-lg btn-block vote" name="vote" value="{{option_a}}" type="submit">
+                        <i class="fa fa-paw"></i> {{option_a}}
+                    </button>
+                    <button id="b" class="btn btn-success btn-lg btn-block vote" name="vote" value="{{option_b}}" type="submit">
+                        <i class="fa fa-paw"></i> {{option_b}}
+                    </button>
+                </form>
+                <div id="tip">
+                    <p><span class="glyphicon glyphicon-info-sign"></span> You can change your vote</p>
+                </div>
+                <div id="hostname">
+                    Processed by container ID: {{hostname}}
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
