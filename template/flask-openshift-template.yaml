@@ -1,0 +1,585 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: voting-app-simple
+  annotations:
+    description: "Simple voting application for troubleshooting"
+    tags: "voting,python,nodejs,redis,postgresql"
+    iconClass: "icon-python"
+    openshift.io/display-name: "Voting Application (Simple)"
+labels:
+  template: voting-app-simple
+  app: voting-app
+
+parameters:
+- name: APPLICATION_NAME
+  displayName: "Application Name"
+  description: "The name for the application"
+  value: "voting-app"
+  required: true
+
+- name: VOTE_IMAGE
+  displayName: "Vote Application Image"
+  description: "The container image for the vote application"
+  value: "quay.io/ashkarstudy/voting-app:vote"
+  required: true
+
+- name: RESULT_IMAGE
+  displayName: "Result Application Image" 
+  description: "The container image for the result application"
+  value: "quay.io/ashkarstudy/voting-app:result"
+  required: true
+
+- name: WORKER_IMAGE
+  displayName: "Worker Service Image"
+  description: "The container image for the worker service"
+  value: "quay.io/ashkarstudy/voting-app:worker"
+  required: true
+
+- name: REDIS_IMAGE
+  displayName: "Redis Image"
+  description: "The container image for Redis"
+  value: "redis:alpine"
+  required: true
+
+- name: POSTGRES_IMAGE
+  displayName: "PostgreSQL Image"
+  description: "The container image for PostgreSQL"
+  value: "postgres:15"
+  required: true
+
+- name: POSTGRES_USER
+  displayName: "PostgreSQL User"
+  description: "Username for PostgreSQL database"
+  value: "postgres"
+  required: true
+
+- name: POSTGRES_PASSWORD
+  displayName: "PostgreSQL Password"
+  description: "Password for PostgreSQL database"
+  generate: expression
+  from: "[a-zA-Z0-9]{16}"
+  required: true
+
+- name: POSTGRES_DATABASE
+  displayName: "PostgreSQL Database"
+  description: "Name of PostgreSQL database"
+  value: "postgres"
+  required: true
+
+- name: POSTGRES_STORAGE_SIZE
+  displayName: "PostgreSQL Storage Size"
+  description: "Size of persistent volume for PostgreSQL"
+  value: "2Gi"
+  required: true
+
+- name: REDIS_STORAGE_SIZE
+  displayName: "Redis Storage Size"
+  description: "Size of persistent volume for Redis"
+  value: "1Gi"
+  required: true
+
+- name: STORAGE_CLASS
+  displayName: "Storage Class"
+  description: "Storage class for persistent volumes (required)"
+  value: ""
+  required: true
+
+- name: OPTION_A
+  displayName: "Voting Option A"
+  description: "First voting option"
+  value: "Cats"
+  required: true
+
+- name: OPTION_B
+  displayName: "Voting Option B"
+  description: "Second voting option"
+  value: "Dogs"
+  required: true
+
+objects:
+
+# Redis PVC
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: ${APPLICATION_NAME}-redis-pvc
+    labels:
+      app: ${APPLICATION_NAME}
+      component: redis
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${REDIS_STORAGE_SIZE}
+    storageClassName: ${STORAGE_CLASS}
+
+# PostgreSQL PVC
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: ${APPLICATION_NAME}-postgres-pvc
+    labels:
+      app: ${APPLICATION_NAME}
+      component: postgres
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${POSTGRES_STORAGE_SIZE}
+    storageClassName: ${STORAGE_CLASS}
+
+# PostgreSQL Secret
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: ${APPLICATION_NAME}-postgres-secret
+    labels:
+      app: ${APPLICATION_NAME}
+  type: Opaque
+  stringData:
+    POSTGRES_USER: ${POSTGRES_USER}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    POSTGRES_DB: ${POSTGRES_DATABASE}
+
+# Redis Deployment
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: ${APPLICATION_NAME}-redis
+    labels:
+      app: ${APPLICATION_NAME}
+      component: redis
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: ${APPLICATION_NAME}
+        component: redis
+    template:
+      metadata:
+        labels:
+          app: ${APPLICATION_NAME}
+          component: redis
+      spec:
+        containers:
+        - name: redis
+          image: ${REDIS_IMAGE}
+          imagePullPolicy: Always
+          ports:
+          - containerPort: 6379
+          volumeMounts:
+          - name: redis-storage
+            mountPath: /data
+          livenessProbe:
+            exec:
+              command:
+              - redis-cli
+              - ping
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+              - redis-cli
+              - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+        volumes:
+        - name: redis-storage
+          persistentVolumeClaim:
+            claimName: ${APPLICATION_NAME}-redis-pvc
+
+# Redis Service
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: ${APPLICATION_NAME}-redis
+    labels:
+      app: ${APPLICATION_NAME}
+      component: redis
+  spec:
+    selector:
+      app: ${APPLICATION_NAME}
+      component: redis
+    ports:
+    - port: 6379
+      targetPort: 6379
+
+# Redis Service (hardcoded name for worker)
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: redis
+    labels:
+      app: ${APPLICATION_NAME}
+      component: redis
+  spec:
+    selector:
+      app: ${APPLICATION_NAME}
+      component: redis
+    ports:
+    - port: 6379
+      targetPort: 6379
+
+# PostgreSQL Deployment
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: ${APPLICATION_NAME}-postgres
+    labels:
+      app: ${APPLICATION_NAME}
+      component: postgres
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: ${APPLICATION_NAME}
+        component: postgres
+    template:
+      metadata:
+        labels:
+          app: ${APPLICATION_NAME}
+          component: postgres
+      spec:
+        containers:
+        - name: postgres
+          image: ${POSTGRES_IMAGE}
+          imagePullPolicy: Always
+          ports:
+          - containerPort: 5432
+          env:
+          - name: POSTGRES_USER
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-postgres-secret
+                key: POSTGRES_USER
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-postgres-secret
+                key: POSTGRES_PASSWORD
+          - name: POSTGRES_DB
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-postgres-secret
+                key: POSTGRES_DB
+          - name: PGDATA
+            value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+          - name: postgres-storage
+            mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+        volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: ${APPLICATION_NAME}-postgres-pvc
+
+# PostgreSQL Service
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: ${APPLICATION_NAME}-postgres
+    labels:
+      app: ${APPLICATION_NAME}
+      component: postgres
+  spec:
+    selector:
+      app: ${APPLICATION_NAME}
+      component: postgres
+    ports:
+    - port: 5432
+      targetPort: 5432
+
+# PostgreSQL Service (hardcoded name for worker)
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: postgres
+    labels:
+      app: ${APPLICATION_NAME}
+      component: postgres
+  spec:
+    selector:
+      app: ${APPLICATION_NAME}
+      component: postgres
+    ports:
+    - port: 5432
+      targetPort: 5432
+
+# Vote Deployment
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: ${APPLICATION_NAME}-vote
+    labels:
+      app: ${APPLICATION_NAME}
+      component: vote
+  spec:
+    replicas: 2
+    selector:
+      matchLabels:
+        app: ${APPLICATION_NAME}
+        component: vote
+    template:
+      metadata:
+        labels:
+          app: ${APPLICATION_NAME}
+          component: vote
+      spec:
+        containers:
+        - name: vote
+          image: ${VOTE_IMAGE}
+          imagePullPolicy: Always
+          ports:
+          - containerPort: 8080
+          env:
+          - name: OPTION_A
+            value: ${OPTION_A}
+          - name: OPTION_B
+            value: ${OPTION_B}
+          - name: REDIS_HOST
+            value: ${APPLICATION_NAME}-redis
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+# Vote Service
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: ${APPLICATION_NAME}-vote
+    labels:
+      app: ${APPLICATION_NAME}
+      component: vote
+  spec:
+    selector:
+      app: ${APPLICATION_NAME}
+      component: vote
+    ports:
+    - port: 8080
+      targetPort: 8080
+
+# Vote Route
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    name: ${APPLICATION_NAME}-vote
+    labels:
+      app: ${APPLICATION_NAME}
+      component: vote
+    annotations:
+      openshift.io/host.generated: "true"
+  spec:
+    to:
+      kind: Service
+      name: ${APPLICATION_NAME}-vote
+    port:
+      targetPort: 8080
+
+# Result Deployment
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: ${APPLICATION_NAME}-result
+    labels:
+      app: ${APPLICATION_NAME}
+      component: result
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: ${APPLICATION_NAME}
+        component: result
+    template:
+      metadata:
+        labels:
+          app: ${APPLICATION_NAME}
+          component: result
+      spec:
+        containers:
+        - name: result
+          image: ${RESULT_IMAGE}
+          imagePullPolicy: Always
+          ports:
+          - containerPort: 8080
+          env:
+          - name: POSTGRES_HOST
+            value: ${APPLICATION_NAME}-postgres
+          - name: POSTGRES_USER
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-postgres-secret
+                key: POSTGRES_USER
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-postgres-secret
+                key: POSTGRES_PASSWORD
+          - name: POSTGRES_DB
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-postgres-secret
+                key: POSTGRES_DB
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+# Result Service
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: ${APPLICATION_NAME}-result
+    labels:
+      app: ${APPLICATION_NAME}
+      component: result
+  spec:
+    selector:
+      app: ${APPLICATION_NAME}
+      component: result
+    ports:
+    - port: 8080
+      targetPort: 8080
+
+# Result Route
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    name: ${APPLICATION_NAME}-result
+    labels:
+      app: ${APPLICATION_NAME}
+      component: result
+    annotations:
+      openshift.io/host.generated: "true"
+  spec:
+    to:
+      kind: Service
+      name: ${APPLICATION_NAME}-result
+    port:
+      targetPort: 8080
+
+# Worker Deployment
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: ${APPLICATION_NAME}-worker
+    labels:
+      app: ${APPLICATION_NAME}
+      component: worker
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: ${APPLICATION_NAME}
+        component: worker
+    template:
+      metadata:
+        labels:
+          app: ${APPLICATION_NAME}
+          component: worker
+      spec:
+        initContainers:
+        - name: wait-for-redis
+          image: redis:alpine
+          command: ['sh', '-c']
+          args:
+          - |
+            echo "Waiting for Redis to be ready..."
+            until redis-cli -h redis ping; do
+              echo "Redis is unavailable - sleeping"
+              sleep 2
+            done
+            echo "Redis is ready!"
+        - name: wait-for-postgres
+          image: postgres:15
+          env:
+          - name: PGPASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-postgres-secret
+                key: POSTGRES_PASSWORD
+          command: ['sh', '-c']
+          args:
+          - |
+            echo "Waiting for PostgreSQL to be ready..."
+            until pg_isready -h postgres -U postgres; do
+              echo "PostgreSQL is unavailable - sleeping"
+              sleep 2
+            done
+            echo "PostgreSQL is ready!"
+        containers:
+        - name: worker
+          image: ${WORKER_IMAGE}
+          imagePullPolicy: Always
+          env:
+          - name: REDIS_HOST
+            value: ${APPLICATION_NAME}-redis
+          - name: REDIS_PORT
+            value: "6379"
+          - name: REDIS_URL
+            value: ${APPLICATION_NAME}-redis:6379
+          - name: REDIS_SERVER
+            value: ${APPLICATION_NAME}-redis
+          - name: redis
+            value: ${APPLICATION_NAME}-redis
+          - name: POSTGRES_HOST
+            value: ${APPLICATION_NAME}-postgres
+          - name: POSTGRES_PORT
+            value: "5432"
+          - name: POSTGRES_USER
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-postgres-secret
+                key: POSTGRES_USER
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-postgres-secret
+                key: POSTGRES_PASSWORD
+          - name: POSTGRES_DB
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-postgres-secret
+                key: POSTGRES_DB
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          # Add restart policy and backoff
+          livenessProbe:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - "pgrep -f worker || exit 1"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
